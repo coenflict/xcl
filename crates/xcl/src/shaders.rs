@@ -6,6 +6,7 @@
 //! `--compile N` also compiles N of the complete translations with DXC.
 
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -713,12 +714,21 @@ pub fn run(path: &Path, args: &[String]) -> i32 {
         }
     };
     if args.iter().any(|a| a == "--precompile") {
+        let start = match opt("--start") {
+            Some(start) => start,
+            None if args.iter().any(|a| a == "--start") => {
+                eprintln!("xcl shaders: --start requires a non-negative record index");
+                return 2;
+            }
+            None => 0,
+        };
+        let records = precompile_records(input.len(), start, opt("--limit").unwrap_or(usize::MAX));
         let only = args.iter().position(|a| a == "--only").and_then(|i| args.get(i + 1)).map(|s| s.to_ascii_lowercase());
         let pipelines = args.iter().any(|a| a == "--pipelines");
         // the runtime's key: heap windows with `XCL_HEAP_WINDOWS=1` (`pso::mem_windows`)
         let windows = opt("--windows").unwrap_or(4) as u32;
         let windows = if windows > 1 && recomp::pso::heap_windows() { windows | recomp::HEAP_WINDOWS } else { windows };
-        return precompile(&input, opt("--limit").unwrap_or(usize::MAX), windows, opt("--split").map(|v| v != 0), only.as_deref(), pipelines, t0);
+        return precompile(&input, records, windows, opt("--split").map(|v| v != 0), only.as_deref(), pipelines, t0);
     }
     if args.iter().any(|a| a == "--direct") {
         return direct_sweep(&input, args, top, json, t0);
@@ -840,7 +850,12 @@ impl Pipelines {
     }
 }
 
-fn precompile(input: &Input, limit: usize, windows: u32, split: Option<bool>, only: Option<&str>, pipelines: bool, t0: std::time::Instant) -> i32 {
+fn precompile_records(len: usize, start: usize, limit: usize) -> Range<usize> {
+    let start = start.min(len);
+    start..start + limit.min(len - start)
+}
+
+fn precompile(input: &Input, records: Range<usize>, windows: u32, split: Option<bool>, only: Option<&str>, pipelines: bool, t0: std::time::Instant) -> i32 {
     let pipelines = if pipelines {
         match Pipelines::new() {
             Ok(p) => Some(p),
@@ -853,7 +868,7 @@ fn precompile(input: &Input, limit: usize, windows: u32, split: Option<bool>, on
         None
     };
     let pipelines = pipelines.as_ref();
-    let n = input.len().min(limit);
+    let n = records.len();
     let next = AtomicUsize::new(0);
     let (done, compiled, cached, failed, skipped) = (AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0));
     let errors: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -880,7 +895,7 @@ fn precompile(input: &Input, limit: usize, windows: u32, split: Option<bool>, on
                 if i >= n {
                     break;
                 }
-                let (name, blob) = input.get(i);
+                let (name, blob) = input.get(records.start + i);
                 let Some(blob) = blob else { continue };
                 let Some(sh) = xbox::parse(&blob) else { continue };
                 if only.is_some_and(|o| !sh.stage.eq_ignore_ascii_case(o)) {
@@ -1263,6 +1278,19 @@ fn print(path: &Path, what: &str, agg: Agg, top: usize, json: bool, t0: std::tim
 mod tests {
     use super::*;
     use crate::gpu::xbox::tests::{fssm, sample, CODE};
+
+    #[test]
+    fn selects_precompile_record_chunks() {
+        assert_eq!(precompile_records(5, 0, usize::MAX), 0..5);
+        assert_eq!(precompile_records(5, 0, 2), 0..2);
+        assert_eq!(precompile_records(5, 2, 2), 2..4);
+        assert_eq!(precompile_records(5, 4, 2), 4..5);
+        assert_eq!(precompile_records(5, 2, usize::MAX), 2..5);
+        assert_eq!(precompile_records(5, 2, 0), 2..2);
+        assert_eq!(precompile_records(5, 5, 1), 5..5);
+        assert_eq!(precompile_records(5, usize::MAX, usize::MAX), 5..5);
+        assert_eq!(precompile_records(0, 1, 1), 0..0);
+    }
 
     #[test]
     fn aggregates_console_shaders() {

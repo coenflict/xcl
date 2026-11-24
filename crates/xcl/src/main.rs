@@ -34,6 +34,8 @@ Usage:
       for the recompiler). RPF9 packages are scanned for shader records.
       --recomp: translates every RDNA2 program → HLSL and shows what is missing;
       --compile N: additionally compiles N complete translations with DXC.
+      Use --precompile [--pipelines] [--start N] [--limit N] to fill caches from a folder or RPF9.
+      --start takes a zero-based record index (default 0). Both bounds apply before --only.
       --direct [--sample N] [--seed S] [--validate] [--compare]: direct DXIL translator
       coverage over a seeded sample (default 200 programs, 0 = all); also
       --timeout, --max-bytes, --threads, --json, --hash H, --dump DIR.

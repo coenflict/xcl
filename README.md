@@ -118,6 +118,13 @@ xcl shaders D:\data\shaders.rpf --precompile --only cs --pipelines   # build com
 xcl rpf D:\data\shaders.rpf --extract NAME --out folder
 ```
 
+For successive `--precompile` runs, including `--pipelines`, use `--start 0 --limit 1000`,
+then `--start 1000 --limit 1000`, and so on. `--start` is a zero-based input record
+index. It counts RPF9 shader records in archive offset order, or files in a folder's
+sorted depth-first traversal (excluding `.txt` files and names containing `.fssm`).
+Both options count records before `--only` filters by shader stage. The default is to
+start at 0 and continue to the end, and a start at or past the end selects no records.
+
 - **Without a command line** (xcl.exe opened from Explorer) XCL shows a small menu: *Choose a
   game…* (pick its exe or `MicrosoftGame.config`) or *Run again* (the last one). On an error the
   window stays open until Enter.
